@@ -133,3 +133,6 @@ dmypy.json
 
 # sample
 python_sample
+
+# backup
+model_bk

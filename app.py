@@ -1,9 +1,10 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, redirect, send_from_directory, flash
 from gensim.models import word2vec
 from gensim.models import KeyedVectors
 from janome.analyzer import Analyzer# 形態素解析ライブラリ 「pip install janome」
 from janome.charfilter import *
 from janome.tokenfilter import *
+from werkzeug.utils import secure_filename
 import json
 import pprint
 import openpyxl
@@ -13,6 +14,7 @@ import numpy as np
 import wordnet
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = "./data"
 
 #wiki_model = KeyedVectors.load_word2vec_format('./model/jawiki2017_model.vec')
 wiki_model = word2vec.Word2Vec.load('./model/latest-ja-word2vec-gensim-model/word2vec.gensim.model')# 追加学習の場合は読み取り専用のKeyedVectorsではなくWord2Vecモデルとして読み込む
@@ -27,15 +29,24 @@ wiki_model.train(copus, total_examples=wiki_model.corpus_count, epochs=wiki_mode
 
 # 形態素解析の設定
 token_filters = [CompoundNounFilter(),# 連続する名詞の複合名詞化
-                 POSKeepFilter(['名詞','形容詞','動詞']), # 抽出する品詞の指定
+                 POSKeepFilter(['名詞','形容詞']), # 抽出する品詞の指定
                  UpperCaseFilter()] # アルファベットを大文字に変換
 a = Analyzer(token_filters=token_filters)
 # 問い合わせ台帳の読み込み
-excel_path = "./data/問合せ管理表サンプル.xlsx"
+excel_path = "./data/QA.xlsx"
 wb = openpyxl.load_workbook(excel_path)
 sheet = wb.worksheets[0]
 q_col = "B"# 質問の列（ABC...）
 a_col = "C"# 回答の列（ABC...）
+
+# 分かち書き
+def separate_word(question):
+    print('■debug:「%s」を形態素解析します。' % question)
+    word_list = []
+    for token in a.analyze(question):
+        print(str(token))
+        word_list.append(str(token).split()[0])
+    return word_list
 
 # テキストのベクトルを計算
 def get_vector(text):
@@ -73,25 +84,21 @@ def search_question(word_list):
 # 初期表示
 @app.route('/')
 def page_load():
+    #TODO saveされたmodelをloadする(?)
     return render_template('chat.html')
 
 # 質問を受け取って回答を返す
 @app.route('/question', methods=['POST'])
 def answer():
-    #json = request.get_json()
-    #question = json['question']
     question = request.form['question']
 
-    # 形態素解析
-    print('■debug:「%s」を形態素解析します。' % question)
-    word_list = []
-    for token in a.analyze(question):
-        print(str(token))
-        word_list.append(str(token).split()[0])
+    # 質問を形態素解析して単語リスト（名詞、形容詞、動詞）に変換
+    word_list = separate_word(question)
     
     # 問い合わせ台帳を検索
     row_points = search_question(word_list)
     #ヒットしない場合は、類義語でもう一度検索
+    #TODO 毎回類義語で検索したい。加算0.5点とか
     if len(row_points) == 0 :
         synonym_word_list = []
         for word in word_list:
@@ -114,12 +121,9 @@ def answer():
         # 最高点が複数存在する場合は、入力された質問とベクトル類似度が高いQAを返す
         if len(top_points) > 1:
             m_vec = get_vector(question)
-            #print('■debug:m_vec')
-            #print(m_vec)
             for row in top_points:
                 print('■debug:q_vec ' + sheet[q_col + str(row[0])].value)
                 q_vec = get_vector(sheet[q_col + str(row[0])].value)
-                #print(q_vec)
                 print('コサイン類似度：' + str(cos_sim(m_vec, q_vec)))
                 if top_row[1] < cos_sim(m_vec, q_vec):
                     top_row[0] = row[0]
@@ -141,12 +145,47 @@ def answer():
     
     return jsonify(values=json.dumps(return_json))
 
+# 管理画面(GET)
+@app.route('/admin',methods=['GET'])
+def adminpage_load():
+    qa_table = []
+    for i in range(200):#Excel何行目まで見るか
+        q_cell = sheet[q_col + str(i+1)]
+        a_cell = sheet[a_col + str(i+1)]
+        if q_cell.value is not None and a_cell.value is not None:
+            qa_table.append([i+1,q_cell.value,a_cell.value])
+    return render_template('admin.html',qa_table=qa_table)
+
+# 管理画面(POST:Excelのアップロード)
+@app.route('/admin',methods=['POST'])
+def upload():
+    print("upload()処理開始")
+    # ファイル存在チェック
+    if 'file' not in request.files:
+        print("ファイルが存在しない。")
+        return redirect(request.url)
+    # データの取り出し
+    file = request.files['file']
+    filename = file.filename
+    print("ファイル名：" + filename)
+    # ファイル名チェック
+    if '.' in filename and filename.rsplit('.', 1)[1].lower() in ['xlsx','xls']:
+        #filename = secure_filename(file.filename)# 危険な文字を削除（サニタイズ処理）★2バイト文字消えちゃうので一旦外す
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))# ファイルの保存
+        print("upload()ファイル保存完了")
+        # アップロード後のページに転送
+        return redirect(request.url)
+    else:
+        print("ファイル名が存在しない。またはエクセル形式でない。")
+        return redirect(request.url)
+    #TODO アップしたエクセルを分かち書きにする
+    #TODO wikiモデルに追加学習させる
+    #TODO saveする
+
+
+# キャッシュしない
 @app.after_request
 def add_header(r):
-    """
-    Add headers to both force latest IE rendering engine or Chrome Frame,
-    and also to cache the rendered page for 10 minutes.
-    """
     r.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     r.headers["Pragma"] = "no-cache"
     r.headers["Expires"] = "0"

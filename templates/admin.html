@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>chatbot_admin</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    </head>
+    <body>
+        <form method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="submit" value="Upload">
+        </form>
+        <table border="1">
+            <thead>
+                <tr>
+                    <th>No.</th><th>Question</th><th>Answer</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for qa_row in qa_table %}
+                <tr>
+                    <td>{{ qa_row[0]}}</td>
+                    <td>{{ qa_row[1]}}</td>
+                    <td>{{ qa_row[2]}}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+</html>
