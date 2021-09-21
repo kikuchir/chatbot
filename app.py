@@ -21,7 +21,7 @@ wiki_model = word2vec.Word2Vec.load('./model/latest-ja-word2vec-gensim-model/wor
 #wiki_model = KeyedVectors.load_word2vec_format('./model/cc.ja.300.vec')#精度は高いけど読み込み遅い
 
 # 問い合わせ台帳のQを追加学習
-copus = word2vec.Text8Corpus('./data/split_問合せ管理表サンプル.txt')
+copus = word2vec.Text8Corpus('./data/split_QA.txt')
 wiki_model.build_vocab(copus, update=True)
 #wiki_model.build_vocab('./data/split_問合せ管理表サンプル.txt', update=True)
 wiki_model.train(copus, total_examples=wiki_model.corpus_count, epochs=wiki_model.iter)

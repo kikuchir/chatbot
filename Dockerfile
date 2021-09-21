@@ -1,4 +1,7 @@
-FROM python:3.8-alpine
+# FROM python:3.8-alpine
+FROM condaforge/miniforge3
+
+CMD ["lscpu"]
 
 ENV LANG ja_JP.UTF-8
 ENV LANGUAGE ja_JP:ja
@@ -9,7 +12,10 @@ WORKDIR /chatbot
 
 COPY ./ /chatbot
 
-RUN pip install numpy
+RUN apt-get update
+RUN apt-get -y install gcc
+RUN apt-get -y install g++
+RUN conda install numpy
 RUN pip install scipy
 RUN pip install gensim==3.8.3
 RUN pip install janome
